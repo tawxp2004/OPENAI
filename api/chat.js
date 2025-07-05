@@ -1,34 +1,48 @@
 export default async function handler(req, res) {
-  const { message } = req.body;
+  // CORS Headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: message }],
-      stream: true
-    })
-  });
-
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive"
-  });
-
-  const reader = response.body.getReader();
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    res.write(encoder.encode(decoder.decode(value)));
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return;
   }
 
-  res.end();
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      res.status(400).json({ error: "No message provided" });
+      return;
+    }
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: message }]
+      })
+    });
+
+    const data = await response.json();
+
+    // ✅ طباعة الرد الكامل في الLog
+    console.log("OpenAI Response:", JSON.stringify(data));
+
+    if (!data.choices || !data.choices[0]) {
+      res.status(500).json({ error: "Invalid response from OpenAI", details: data });
+      return;
+    }
+
+    res.status(200).json({ reply: data.choices[0].message.content });
+
+  } catch (error) {
+    console.error("API error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 }
